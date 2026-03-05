@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply bg-slate-900 text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500/30;
+    /* Adding a subtle radial gradient for a premium dark mode feel */
+    background-image: radial-gradient(circle at top right, #1e293b 0%, #0f172a 100%);
+    background-attachment: fixed;
+  }
+}

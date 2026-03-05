@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+env/
+dist/
+build/
+
+# Environment variables
+.env
+
+# Databases
+*.sqlite3
+
+# Logs
+*.log
+server_log.txt
+lint.txt
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
