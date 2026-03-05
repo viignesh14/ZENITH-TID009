@@ -3,6 +3,7 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Briefcase, ArrowRight, Zap, Code, ShieldCheck, Database, Layout, Search, FileText, CheckCircle, Clock, XCircle, LogOut, Video, BookOpen, GraduationCap, Award, BrainCircuit, Newspaper, Users, Wallet, Shield, MapPin, Mail, Phone, Calendar } from "lucide-react";
+import MockInterviewPage from "./MockInterview";
 
 const BASE_URL = "http://127.0.0.1:8000/api";
 
@@ -31,7 +32,7 @@ function CandidateDashboard() {
   const [vacancies, setVacancies] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState("roles"); // "roles", "applications", or "profile"
+  const [activeTab, setActiveTab] = useState("roles"); // "roles", "mockinterview", "applications", or "profile"
   const [profile, setProfile] = useState({ name: "", phone: "", location: "", linkedin: "", github: "", experience: "", skills: "", currentRole: "", education: "" });
   const [isProfileSaved, setIsProfileSaved] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -43,6 +44,7 @@ function CandidateDashboard() {
   const [searched, setSearched] = useState(false);
   const [talentData, setTalentData] = useState(null);
   const [talentLoading, setTalentLoading] = useState(false);
+  const [selectedMockVacancy, setSelectedMockVacancy] = useState(null); // for mock interview
 
   // Initialize email from localStorage if present
   useEffect(() => {
@@ -455,10 +457,10 @@ function CandidateDashboard() {
 
       {/* Tabs */}
       <div className="flex justify-center mb-8">
-        <div className="bg-slate-800/60 p-1.5 rounded-2xl flex border border-slate-700/50 backdrop-blur-xl shrink-0 inline-flex">
+        <div className="bg-slate-800/60 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-700/50 backdrop-blur-xl">
           <button
             onClick={() => setActiveTab("roles")}
-            className={`px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "roles"
+            className={`px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "roles"
               ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
               : "text-slate-400 hover:text-white hover:bg-slate-700/50"
               }`}
@@ -466,8 +468,17 @@ function CandidateDashboard() {
             <Briefcase className="w-4 h-4 mr-2" /> Open Roles
           </button>
           <button
+            onClick={() => { setActiveTab("mockinterview"); setSelectedMockVacancy(null); }}
+            className={`px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "mockinterview"
+              ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+              : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+              }`}
+          >
+            <BrainCircuit className="w-4 h-4 mr-2" /> Mock Interview
+          </button>
+          <button
             onClick={() => setActiveTab("applications")}
-            className={`px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "applications"
+            className={`px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "applications"
               ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
               : "text-slate-400 hover:text-white hover:bg-slate-700/50"
               }`}
@@ -476,7 +487,7 @@ function CandidateDashboard() {
           </button>
           <button
             onClick={() => setActiveTab("profile")}
-            className={`px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "profile"
+            className={`px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-300 flex items-center ${activeTab === "profile"
               ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
               : "text-slate-400 hover:text-white hover:bg-slate-700/50"
               }`}
@@ -487,7 +498,75 @@ function CandidateDashboard() {
       </div>
 
       {/* Main Content */}
-      {activeTab === "profile" ? (
+      {activeTab === "mockinterview" ? (
+        <div className="animate-in fade-in duration-500">
+          {!selectedMockVacancy ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white pl-3 border-l-4 border-purple-500">Select a Role to Practice</h2>
+                <span className="text-slate-400 font-medium bg-slate-800/50 px-3 py-1 rounded-full text-sm border border-slate-700">{vacancies.length} Available</span>
+              </div>
+              {vacancies.length === 0 ? (
+                <div className="bg-slate-800/40 border border-slate-700 border-dashed rounded-3xl p-12 text-center">
+                  <BrainCircuit className="w-12 h-12 text-slate-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-slate-300">No open roles available</h3>
+                  <p className="text-slate-500 text-sm mt-1">HR hasn't posted any vacancies yet. Check back soon.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {vacancies.map((job, index) => (
+                    <motion.div
+                      key={job.id}
+                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.08 }}
+                      className="group flex flex-col bg-slate-800/60 backdrop-blur-xl border border-slate-700/70 shadow-lg rounded-3xl overflow-hidden hover:border-purple-500/50 transition-all duration-300"
+                    >
+                      <div className="p-6 flex-grow border-b border-slate-700/50 flex flex-col items-start">
+                        <div className="w-12 h-12 rounded-2xl bg-purple-900/30 border border-purple-500/20 flex items-center justify-center shadow-inner mb-5 group-hover:scale-110 transition-transform duration-300 shrink-0">
+                          <BrainCircuit className="w-6 h-6 text-purple-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-white mb-2 leading-snug h-14 line-clamp-2">{job.title}</h3>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          <span className="text-[11px] font-semibold px-2 py-1 bg-purple-500/10 text-purple-400 rounded-md border border-purple-500/20">{job.experience_required}+ Yrs</span>
+                          <span className="text-[11px] font-semibold px-2 py-1 bg-slate-700/50 text-slate-400 rounded-md border border-slate-600/50">5 Questions</span>
+                        </div>
+                        <div className="space-y-2 mt-auto w-full">
+                          {job.required_skills.split(',').slice(0, 3).map((skill, i) => (
+                            <div key={i} className="flex items-center text-sm text-slate-400">
+                              <ShieldCheck className="w-4 h-4 text-purple-400/70 mr-2 shrink-0" />
+                              <span className="truncate">{skill.trim()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="p-4 bg-slate-900/30">
+                        <button
+                          onClick={() => {
+                            if (!searchEmail) {
+                              alert("Please go to 'My Applications' tab first and enter your email, or save your profile with an email.");
+                              return;
+                            }
+                            setSelectedMockVacancy(job);
+                          }}
+                          className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold py-2.5 px-5 rounded-xl transition-all shadow-lg shadow-purple-600/20 active:scale-95 flex items-center justify-center"
+                        >
+                          <BrainCircuit className="w-4 h-4 mr-2" /> Start Mock Interview
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <MockInterviewPage
+              vacancy={selectedMockVacancy}
+              candidateEmail={searchEmail}
+              candidateName={profile.name || "Candidate"}
+              onBack={() => setSelectedMockVacancy(null)}
+            />
+          )}
+        </div>
+      ) : activeTab === "profile" ? (
         <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in duration-500">
           <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl p-8 rounded-3xl shadow-xl">
             <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">

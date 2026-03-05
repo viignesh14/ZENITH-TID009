@@ -11,6 +11,11 @@ from .views import (
     get_workforce_strategy,
     get_talent_management,
     candidate_negotiate,
+    generate_mock_interview,
+    submit_mock_interview,
+    get_mock_interview_result,
+    get_candidate_interview_scores,
+    delete_mock_interview,
 )
 
 urlpatterns = [
@@ -25,4 +30,10 @@ urlpatterns = [
     path("get-strategy/", get_workforce_strategy),
     path("get-talent/", get_talent_management),
     path("candidate-negotiate/", candidate_negotiate),
+    # Sub-Agent 6: Mock Interview with AI
+    path("mock-interview/generate/", generate_mock_interview),
+    path("mock-interview/submit/", submit_mock_interview),
+    path("mock-interview/result/", get_mock_interview_result),
+    path("mock-interview/hr-scores/", get_candidate_interview_scores),
+    path("mock-interview/<int:pk>/delete/", delete_mock_interview),
 ]

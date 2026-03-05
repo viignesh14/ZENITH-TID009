@@ -102,3 +102,40 @@ class Candidate(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.vacancy.title}"
+
+
+class MockInterview(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),       # Questions generated, not yet answered
+        ("completed", "Completed"),   # Answers submitted & evaluated
+    ]
+
+    vacancy = models.ForeignKey(
+        Vacancy,
+        on_delete=models.CASCADE,
+        related_name="mock_interviews",
+    )
+    candidate_email = models.EmailField()
+    candidate_name = models.CharField(max_length=255, blank=True, null=True)
+
+    # Generated questions (JSON list)
+    questions = models.TextField(blank=True, null=True)  # JSON
+
+    # Submitted answers (JSON list of {question, answer})
+    answers = models.TextField(blank=True, null=True)  # JSON
+
+    # Evaluation Results
+    overall_score = models.IntegerField(blank=True, null=True)
+    grade = models.CharField(max_length=10, blank=True, null=True)
+    evaluation_report = models.TextField(blank=True, null=True)  # Full JSON report
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Mock Interview - {self.candidate_email} for {self.vacancy.title}"

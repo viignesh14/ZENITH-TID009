@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.conf import settings
 from google import genai
-from .models import Candidate, Vacancy
+from .models import Candidate, Vacancy, MockInterview
 
 @api_view(["POST"])
 def evaluate_candidate(request):
@@ -495,3 +495,208 @@ def get_talent_management(request):
     
     result = orchestrator.process_request('manage_talent', data)
     return Response(result)
+
+
+# ==============================================================================
+# SUB-AGENT 6: MOCK INTERVIEW WITH AI
+# ==============================================================================
+
+@api_view(["POST"])
+def generate_mock_interview(request):
+    """
+    Called automatically when HR creates a vacancy OR when a candidate requests.
+    Generates 5 AI-tailored interview questions for a vacancy domain.
+    """
+    vacancy_id = request.data.get("vacancy_id")
+    candidate_email = request.data.get("candidate_email", "").strip().lower()
+    candidate_name = request.data.get("candidate_name", "Candidate")
+
+    if not vacancy_id or not candidate_email:
+        return Response({"error": "vacancy_id and candidate_email are required"}, status=400)
+
+    try:
+        vacancy = Vacancy.objects.get(id=vacancy_id)
+    except Vacancy.DoesNotExist:
+        return Response({"error": "Vacancy not found"}, status=404)
+
+    # Check if a pending interview already exists for this candidate+vacancy
+    existing = MockInterview.objects.filter(
+        vacancy=vacancy,
+        candidate_email=candidate_email,
+        status="pending"
+    ).first()
+    if existing:
+        return Response({
+            "interview_id": existing.id,
+            "questions": json.loads(existing.questions),
+            "vacancy_title": vacancy.title,
+            "status": "pending",
+            "message": "Existing interview session found."
+        })
+
+    # Generate questions via AI agent
+    from .mock_interview.interview import MockInterviewAgent
+    agent = MockInterviewAgent()
+    try:
+        questions = agent.generate_questions(
+            vacancy_title=vacancy.title,
+            required_skills=vacancy.required_skills,
+            experience_required=vacancy.experience_required
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({"error": f"AI question generation failed: {str(e)}"}, status=500)
+
+    interview = MockInterview.objects.create(
+        vacancy=vacancy,
+        candidate_email=candidate_email,
+        candidate_name=candidate_name,
+        questions=json.dumps(questions),
+        status="pending",
+    )
+
+    return Response({
+        "interview_id": interview.id,
+        "questions": questions,
+        "vacancy_title": vacancy.title,
+        "status": "pending",
+        "message": "Mock interview created successfully."
+    }, status=201)
+
+
+@api_view(["POST"])
+def submit_mock_interview(request):
+    """
+    Candidate submits their answers. AI evaluates and returns a score report.
+    """
+    interview_id = request.data.get("interview_id")
+    answers = request.data.get("answers")  # List of {question, answer}
+
+    if not interview_id or not answers:
+        return Response({"error": "interview_id and answers are required"}, status=400)
+
+    try:
+        interview = MockInterview.objects.get(id=interview_id)
+    except MockInterview.DoesNotExist:
+        return Response({"error": "Interview not found"}, status=404)
+
+    if interview.status == "completed":
+        # Return existing results
+        return Response({
+            "interview_id": interview.id,
+            "status": "completed",
+            "overall_score": interview.overall_score,
+            "grade": interview.grade,
+            "evaluation_report": json.loads(interview.evaluation_report),
+        })
+
+    # Evaluate with AI
+    from .mock_interview.interview import MockInterviewAgent
+    agent = MockInterviewAgent()
+    try:
+        report = agent.evaluate_answers(
+            vacancy_title=interview.vacancy.title,
+            required_skills=interview.vacancy.required_skills,
+            questions_and_answers=answers
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({"error": f"AI evaluation failed: {str(e)}"}, status=500)
+
+    from django.utils import timezone
+    interview.answers = json.dumps(answers)
+    interview.overall_score = report.get("overall_score", 0)
+    interview.grade = report.get("grade", "N/A")
+    interview.evaluation_report = json.dumps(report)
+    interview.status = "completed"
+    interview.completed_at = timezone.now()
+    interview.save()
+
+    return Response({
+        "interview_id": interview.id,
+        "status": "completed",
+        "overall_score": interview.overall_score,
+        "grade": interview.grade,
+        "evaluation_report": report,
+    })
+
+
+@api_view(["GET"])
+def get_mock_interview_result(request):
+    """
+    Get a candidate's existing mock interview for a vacancy.
+    Query params: ?candidate_email=...&vacancy_id=...
+    """
+    email = request.GET.get("candidate_email", "").strip().lower()
+    vacancy_id = request.GET.get("vacancy_id")
+
+    if not email:
+        return Response({"error": "candidate_email required"}, status=400)
+
+    qs = MockInterview.objects.filter(candidate_email=email)
+    if vacancy_id:
+        qs = qs.filter(vacancy_id=vacancy_id)
+
+    qs = qs.order_by("-created_at")
+    result = []
+    for mi in qs:
+        result.append({
+            "interview_id": mi.id,
+            "vacancy_id": mi.vacancy_id,
+            "vacancy_title": mi.vacancy.title,
+            "status": mi.status,
+            "overall_score": mi.overall_score,
+            "grade": mi.grade,
+            "questions": json.loads(mi.questions) if mi.questions else [],
+            "evaluation_report": json.loads(mi.evaluation_report) if mi.evaluation_report else None,
+            "created_at": mi.created_at,
+            "completed_at": mi.completed_at,
+        })
+    return Response(result)
+
+
+@api_view(["GET"])
+def get_candidate_interview_scores(request):
+    """
+    HR view: Get all mock interview scores for candidates in a vacancy.
+    Query params: ?vacancy_id=...
+    """
+    vacancy_id = request.GET.get("vacancy_id")
+    if not vacancy_id:
+        return Response({"error": "vacancy_id required"}, status=400)
+
+    interviews = MockInterview.objects.filter(
+        vacancy_id=vacancy_id,
+        status="completed"
+    ).order_by("-overall_score")
+
+    result = []
+    for mi in interviews:
+        result.append({
+            "interview_id": mi.id,
+            "candidate_email": mi.candidate_email,
+            "candidate_name": mi.candidate_name,
+            "overall_score": mi.overall_score,
+            "grade": mi.grade,
+            "hiring_recommendation": json.loads(mi.evaluation_report).get("hiring_recommendation") if mi.evaluation_report else None,
+            "summary": json.loads(mi.evaluation_report).get("summary") if mi.evaluation_report else None,
+            "strengths": json.loads(mi.evaluation_report).get("strengths", []) if mi.evaluation_report else [],
+            "areas_for_improvement": json.loads(mi.evaluation_report).get("areas_for_improvement", []) if mi.evaluation_report else [],
+            "completed_at": mi.completed_at,
+        })
+    return Response(result)
+
+
+@api_view(["DELETE"])
+def delete_mock_interview(request, pk):
+    """
+    HR view: Permanently delete a mock interview result.
+    """
+    try:
+        interview = MockInterview.objects.get(id=pk)
+        interview.delete()
+        return Response({"message": "Mock interview result deleted successfully"}, status=200)
+    except MockInterview.DoesNotExist:
+        return Response({"error": "Interview not found"}, status=404)

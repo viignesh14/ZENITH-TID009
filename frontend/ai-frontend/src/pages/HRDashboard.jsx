@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, CheckCircle, XCircle, BrainCircuit, ShieldAlert, ShieldCheck, Mail, BarChart3, Clock, PlusCircle, Briefcase, ChevronDown, Trash2, Zap, RotateCcw, FileText } from "lucide-react";
+import { Users, CheckCircle, XCircle, BrainCircuit, ShieldAlert, ShieldCheck, Mail, BarChart3, Clock, PlusCircle, Briefcase, ChevronDown, Trash2, Zap, RotateCcw, FileText, Star, TrendingUp, Award } from "lucide-react";
 
 const BASE_URL = "http://127.0.0.1:8000/api";
 
@@ -13,11 +13,13 @@ function HRDashboard() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [viewMode, setViewMode] = useState("pipeline"); // "pipeline", "offered", "hired", "rejected", or "strategy"
+  const [viewMode, setViewMode] = useState("pipeline"); // "pipeline", "offered", "hired", "rejected", "strategy", or "interviews"
   const [strategyData, setStrategyData] = useState(null);
   const [selectedCandidateId, setSelectedCandidateId] = useState(null);
   const [editingOfferId, setEditingOfferId] = useState(null);
   const [editOfferValue, setEditOfferValue] = useState("");
+  const [interviewScores, setInterviewScores] = useState([]);
+  const [loadingScores, setLoadingScores] = useState(false);
 
   const formatSalary = (s) => {
     if (!s) return "₹8L - ₹15L";
@@ -82,11 +84,15 @@ function HRDashboard() {
     if (viewMode === "strategy") {
       fetchStrategyData();
     }
+    if (viewMode === "interviews" && selectedVacancyId) {
+      fetchInterviewScores(selectedVacancyId);
+    }
   }, [viewMode]);
 
   useEffect(() => {
     if (selectedVacancyId) {
       fetchDashboardData(selectedVacancyId);
+      if (viewMode === "interviews") fetchInterviewScores(selectedVacancyId);
     } else {
       setData(null);
     }
@@ -179,6 +185,29 @@ function HRDashboard() {
     if (viewMode === "rejected") return c.status === "rejected" || c.status === "ai_rejected";
     return c.status === "hr_pending";
   }) || [];
+
+  const fetchInterviewScores = async (vid) => {
+    setLoadingScores(true);
+    try {
+      const res = await axios.get(`${BASE_URL}/mock-interview/hr-scores/?vacancy_id=${vid}`);
+      setInterviewScores(res.data);
+    } catch (err) {
+      console.error("Failed to fetch interview scores:", err);
+    } finally {
+      setLoadingScores(false);
+    }
+  };
+
+  const deleteMockInterview = async (interviewId, candidateName) => {
+    if (!window.confirm(`Remove mock interview result for ${candidateName || "this candidate"}? This cannot be undone.`)) return;
+    try {
+      await axios.delete(`${BASE_URL}/mock-interview/${interviewId}/delete/`);
+      setInterviewScores(prev => prev.filter(mi => mi.interview_id !== interviewId));
+    } catch (err) {
+      console.error("Failed to delete interview:", err);
+      alert("Failed to remove the interview result. Please try again.");
+    }
+  };
 
   return (
     <div className="space-y-8 pb-12">
@@ -330,10 +359,18 @@ function HRDashboard() {
               <p className="text-4xl font-black text-white mt-4">{data.candidates.filter(c => c.status === 'rejected' || c.status === 'ai_rejected').length}</p>
             </motion.div>
 
-            <motion.div onClick={() => setViewMode("strategy")} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className={`bg-slate-800/80 border ${viewMode === 'strategy' ? 'border-amber-400 ring-4 ring-amber-500/20' : 'border-slate-700'} rounded-3xl p-6 shadow-lg backdrop-blur-sm cursor-pointer hover:border-amber-400 transition-all`}>
+            <motion.div onClick={() => { setViewMode("interviews"); fetchInterviewScores(selectedVacancyId); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className={`bg-slate-800/80 border ${viewMode === 'interviews' ? 'border-purple-400 ring-4 ring-purple-500/20' : 'border-slate-700'} rounded-3xl p-6 shadow-lg backdrop-blur-sm cursor-pointer hover:border-purple-400 transition-all`}>
+              <div className="flex items-center justify-between">
+                <span className="text-purple-400 text-sm font-bold uppercase tracking-wider">Interviews</span>
+                <BrainCircuit className="w-5 h-5 text-purple-400" />
+              </div>
+              <p className="text-4xl font-black text-white mt-4">{interviewScores.length > 0 ? interviewScores.length : "—"}</p>
+            </motion.div>
+
+            <motion.div onClick={() => setViewMode("strategy")} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className={`bg-slate-800/80 border ${viewMode === 'strategy' ? 'border-amber-400 ring-4 ring-amber-500/20' : 'border-slate-700'} rounded-3xl p-6 shadow-lg backdrop-blur-sm cursor-pointer hover:border-amber-400 transition-all`}>
               <div className="flex items-center justify-between">
                 <span className="text-amber-400 text-sm font-bold uppercase tracking-wider">Strategy</span>
-                <BrainCircuit className="w-5 h-5 text-amber-400" />
+                <BarChart3 className="w-5 h-5 text-amber-400" />
               </div>
               <p className="text-4xl font-black text-white mt-4">Active</p>
             </motion.div>
@@ -345,7 +382,7 @@ function HRDashboard() {
       <div>
         <div className="flex items-center justify-between mb-6 pl-2 border-l-4 border-indigo-500">
           <h2 className="text-xl font-bold text-white">
-            {viewMode === "pipeline" ? "Candidate Pipeline" : viewMode === "offered" ? "Offered Candidates" : viewMode === "hired" ? "Hired Candidates" : viewMode === "rejected" ? "Rejected Candidates" : "Workforce Strategy"}
+            {viewMode === "pipeline" ? "Candidate Pipeline" : viewMode === "offered" ? "Offered Candidates" : viewMode === "hired" ? "Hired Candidates" : viewMode === "rejected" ? "Rejected Candidates" : viewMode === "interviews" ? "Mock Interview Scores" : "Workforce Strategy"}
           </h2>
         </div>
 
@@ -395,6 +432,105 @@ function HRDashboard() {
                 "{strategyData?.workforce_roadmap || "Shift towards decentralized AI teams by 2026"}"
               </p>
             </div>
+          </div>
+        ) : viewMode === "interviews" ? (
+          <div className="space-y-4 animate-in fade-in duration-500">
+            {loadingScores ? (
+              <div className="flex items-center justify-center min-h-[30vh]">
+                <div className="flex flex-col items-center">
+                  <svg className="animate-spin h-10 w-10 text-purple-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-slate-400 font-medium">Loading interview scores...</span>
+                </div>
+              </div>
+            ) : interviewScores.length === 0 ? (
+              <div className="bg-slate-800/40 border border-slate-700 border-dashed rounded-3xl p-12 text-center">
+                <BrainCircuit className="w-12 h-12 text-slate-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-slate-300">No mock interview results yet</h3>
+                <p className="text-slate-500 text-sm mt-1">Candidates who have completed mock interviews for this vacancy will appear here.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {interviewScores.map((mi, idx) => {
+                  const scoreColor = mi.overall_score >= 80 ? "text-emerald-400" : mi.overall_score >= 60 ? "text-indigo-400" : mi.overall_score >= 40 ? "text-amber-400" : "text-red-400";
+                  const recColor = mi.hiring_recommendation === "Strong Hire" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
+                    mi.hiring_recommendation === "Hire" ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
+                      mi.hiring_recommendation === "Maybe" ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
+                        "bg-red-500/20 text-red-400 border-red-500/30";
+                  return (
+                    <motion.div
+                      key={mi.interview_id}
+                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.07 }}
+                      className="bg-slate-800/80 border border-slate-700/70 rounded-3xl overflow-hidden"
+                    >
+                      <div className="p-6 flex items-start justify-between gap-4">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 border border-purple-500/30 flex items-center justify-center text-white font-black text-xl shrink-0">
+                            #{idx + 1}
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-white">{mi.candidate_name || mi.candidate_email}</h3>
+                            <div className="flex items-center text-xs text-slate-400 mt-1">
+                              <Mail className="w-3 h-3 mr-1" />
+                              {mi.candidate_email}
+                            </div>
+                            {mi.completed_at && (
+                              <div className="flex items-center text-xs text-slate-500 mt-1">
+                                <Clock className="w-3 h-3 mr-1" />
+                                {new Date(mi.completed_at).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end space-y-2 shrink-0">
+                          <div className="text-right">
+                            <p className={`text-4xl font-black ${scoreColor}`}>{mi.overall_score}</p>
+                            <p className="text-xs text-slate-500 font-bold">/100</p>
+                            <span className="text-sm font-black text-white">{mi.grade}</span>
+                          </div>
+                          <button
+                            onClick={() => deleteMockInterview(mi.interview_id, mi.candidate_name || mi.candidate_email)}
+                            className="p-2 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20"
+                            title="Remove interview result"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="px-6 pb-6 space-y-4">
+                        <span className={`inline-flex items-center text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${recColor}`}>
+                          <BrainCircuit className="w-3 h-3 mr-1.5" />
+                          {mi.hiring_recommendation}
+                        </span>
+                        {mi.summary && <p className="text-xs text-slate-400 leading-relaxed">{mi.summary}</p>}
+                        {mi.strengths && mi.strengths.length > 0 && (
+                          <div>
+                            <p className="text-[9px] text-emerald-400 font-black uppercase tracking-widest mb-2">Key Strengths</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {mi.strengths.map((s, i) => (
+                                <span key={i} className="text-[10px] px-2 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg font-bold">{s}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {mi.areas_for_improvement && mi.areas_for_improvement.length > 0 && (
+                          <div>
+                            <p className="text-[9px] text-amber-400 font-black uppercase tracking-widest mb-2">Needs Improvement</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {mi.areas_for_improvement.map((a, i) => (
+                                <span key={i} className="text-[10px] px-2 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg font-bold">{a}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : (
           <>
