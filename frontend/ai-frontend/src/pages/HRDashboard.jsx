@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, CheckCircle, XCircle, BrainCircuit, ShieldAlert, ShieldCheck, Mail, BarChart3, Clock, PlusCircle, Briefcase, ChevronDown, Trash2, Zap, RotateCcw, FileText, Star, TrendingUp, Award } from "lucide-react";
+import { Users, CheckCircle, XCircle, BrainCircuit, ShieldAlert, ShieldCheck, Mail, BarChart3, Clock, PlusCircle, Briefcase, ChevronDown, Trash2, Zap, RotateCcw, FileText, Star, TrendingUp, Award, Download } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const BASE_URL = "http://127.0.0.1:8000/api";
 
@@ -20,6 +22,14 @@ function HRDashboard() {
   const [editOfferValue, setEditOfferValue] = useState("");
   const [interviewScores, setInterviewScores] = useState([]);
   const [loadingScores, setLoadingScores] = useState(false);
+  // Workforce Planning state
+  const [wpFile, setWpFile] = useState(null);
+  const [wpLoading, setWpLoading] = useState(false);
+  const [wpResult, setWpResult] = useState(null);
+  const [wpError, setWpError] = useState("");
+  // Company-wide employee overview
+  const [companyEmp, setCompanyEmp] = useState(null);
+  const [empPanelOpen, setEmpPanelOpen] = useState(true);
 
   const formatSalary = (s) => {
     if (!s) return "₹8L - ₹15L";
@@ -78,7 +88,17 @@ function HRDashboard() {
 
   useEffect(() => {
     fetchVacancies();
+    fetchCompanyEmployees();
   }, []);
+
+  const fetchCompanyEmployees = async () => {
+    try {
+      const res = await axios.get(`${BASE_URL}/company-employees/`);
+      setCompanyEmp(res.data);
+    } catch (err) {
+      console.error("Error fetching company employees:", err);
+    }
+  };
 
   useEffect(() => {
     if (viewMode === "strategy") {
@@ -209,8 +229,226 @@ function HRDashboard() {
     }
   };
 
+  const downloadWorkforcePDF = (result) => {
+    const doc = new jsPDF();
+    const a = result.analysis;
+    const cw = result.current_workforce;
+
+    // Title
+    doc.setFontSize(22);
+    doc.setTextColor(63, 81, 181); // Indigo color
+    doc.text("Workforce Planning Report", 20, 20);
+
+    doc.setFontSize(12);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 20, 30);
+
+    // Section 1: Executive Summary
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Executive Summary", 20, 45);
+    doc.setFontSize(11);
+    const splitSummary = doc.splitTextToSize(a.executive_summary, 170);
+    doc.text(splitSummary, 20, 52);
+
+    let yPos = 55 + (splitSummary.length * 6);
+
+    // Section 2: Workforce Statistics
+    doc.setFontSize(16);
+    doc.text("Workforce Statistics", 20, yPos);
+    yPos += 10;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Total Current Employees', a.current_strength || cw.reduce((s, w) => s + w.count, 0)],
+        ['Total Hires Needed Next Month', a.total_hires_needed_next_month]
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [63, 81, 181] }
+    });
+
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // Section 3: Current Workforce Breakdown
+    doc.setFontSize(14);
+    doc.text("Current Workforce Breakdown", 20, yPos);
+    yPos += 7;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Role / Domain', 'Employee Count']],
+      body: cw.map(w => [w.role, w.count]),
+      theme: 'grid',
+      headStyles: { fillColor: [75, 85, 99] }
+    });
+
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // Add page if needed
+    if (yPos > 240) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    // Section 4: Hiring Recommendations
+    doc.setFontSize(14);
+    doc.text("Hiring Recommendations (Next Month)", 20, yPos);
+    yPos += 7;
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Domain', 'Hires', 'Priority', 'Reason']],
+      body: a.hiring_recommendations.map(r => [r.domain, r.count, r.priority, r.reason]),
+      theme: 'striped',
+      headStyles: { fillColor: [245, 158, 11] }, // Amber
+      columnStyles: {
+        3: { cellWidth: 80 }
+      }
+    });
+
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // Add page if needed
+    if (yPos > 240) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    // Section 5: Risk & Timeline
+    doc.setFontSize(14);
+    doc.text("Project Risks & Implementation Timeline", 20, yPos);
+
+    yPos += 10;
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Risk Analysis:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    const splitRisk = doc.splitTextToSize(a.risk_if_not_hired, 170);
+    doc.text(splitRisk, 20, yPos + 6);
+
+    yPos += 15 + (splitRisk.length * 6);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Suggested Timeline:", 20, yPos);
+    doc.setFont("helvetica", "normal");
+    const splitTimeline = doc.splitTextToSize(a.suggested_timeline, 170);
+    doc.text(splitTimeline, 20, yPos + 6);
+
+    // Save
+    doc.save(`HireNexus_Workforce_Plan_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-6 pb-12">
+
+      {/* ─── COMPANY EMPLOYEES OVERVIEW ───────────────────────────────── */}
+      <div className="bg-gradient-to-r from-slate-800/90 to-indigo-950/60 border border-indigo-500/20 rounded-[1.5rem] shadow-xl overflow-hidden">
+        {/* Header row — always visible */}
+        <button
+          onClick={() => setEmpPanelOpen(o => !o)}
+          className="w-full flex items-center justify-between p-5 hover:bg-white/5 transition-all"
+        >
+          <div className="flex items-center space-x-4">
+            <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-500/30">
+              <Users className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="text-left">
+              <p className="text-[10px] text-indigo-400 font-black uppercase tracking-[0.2em]">Company-Wide</p>
+              <h3 className="text-white font-black text-lg leading-tight">Total Employees Overview</h3>
+            </div>
+          </div>
+          <div className="flex items-center space-x-6">
+            {companyEmp && (
+              <>
+                <div className="text-right hidden sm:block">
+                  <p className="text-3xl font-black text-white">{companyEmp.total_employees}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Hired</p>
+                </div>
+                <div className="text-right hidden sm:block">
+                  <p className="text-3xl font-black text-emerald-400">{companyEmp.total_open_vacancies}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Open Roles</p>
+                </div>
+                <div className="text-right hidden sm:block">
+                  <p className="text-3xl font-black text-indigo-400">{companyEmp.total_vacancies}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Vacancies</p>
+                </div>
+              </>
+            )}
+            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${empPanelOpen ? "rotate-180" : ""}`} />
+          </div>
+        </button>
+
+        {/* Expandable domain grid */}
+        <AnimatePresence>
+          {empPanelOpen && companyEmp && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <div className="border-t border-slate-700/50 p-5">
+                {/* Mobile totals */}
+                <div className="flex sm:hidden justify-around mb-5">
+                  <div className="text-center">
+                    <p className="text-2xl font-black text-white">{companyEmp.total_employees}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Hired</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black text-emerald-400">{companyEmp.total_open_vacancies}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Open Roles</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black text-indigo-400">{companyEmp.total_vacancies}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Vacancies</p>
+                  </div>
+                </div>
+
+                {companyEmp.domains.length === 0 ? (
+                  <div className="text-center py-6">
+                    <Briefcase className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                    <p className="text-slate-500 text-sm">No employees hired yet across any domain.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {companyEmp.domains.map((d, i) => (
+                      <motion.div
+                        key={d.vacancy_id}
+                        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.04 }}
+                        className="bg-slate-900/60 border border-slate-700/50 rounded-2xl p-4 flex items-start justify-between gap-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-bold text-sm leading-snug truncate" title={d.domain}>{d.domain}</p>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {d.required_skills?.split(',').slice(0, 2).map((s, j) => (
+                              <span key={j} className="text-[9px] px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/15 rounded font-bold">{s.trim()}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-2xl font-black ${d.employee_count > 0 ? "text-white" : "text-slate-600"}`}>{d.employee_count}</p>
+                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">employees</p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Refresh button */}
+                <div className="flex justify-end mt-4">
+                  <button
+                    onClick={fetchCompanyEmployees}
+                    className="flex items-center text-xs text-slate-500 hover:text-indigo-400 transition-colors space-x-1"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" /> Refresh
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Top Controls: Vacancy Selector & Create/Delete Buttons */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-800/80 border border-slate-700 p-4 rounded-2xl shadow-lg backdrop-blur-md z-10 relative">
@@ -367,12 +605,12 @@ function HRDashboard() {
               <p className="text-4xl font-black text-white mt-4">{interviewScores.length > 0 ? interviewScores.length : "—"}</p>
             </motion.div>
 
-            <motion.div onClick={() => setViewMode("strategy")} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className={`bg-slate-800/80 border ${viewMode === 'strategy' ? 'border-amber-400 ring-4 ring-amber-500/20' : 'border-slate-700'} rounded-3xl p-6 shadow-lg backdrop-blur-sm cursor-pointer hover:border-amber-400 transition-all`}>
+            <motion.div onClick={() => setViewMode("workforce")} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className={`bg-slate-800/80 border ${viewMode === 'workforce' ? 'border-amber-400 ring-4 ring-amber-500/20' : 'border-slate-700'} rounded-3xl p-6 shadow-lg backdrop-blur-sm cursor-pointer hover:border-amber-400 transition-all`}>
               <div className="flex items-center justify-between">
-                <span className="text-amber-400 text-sm font-bold uppercase tracking-wider">Strategy</span>
+                <span className="text-amber-400 text-sm font-bold uppercase tracking-wider">Workforce Planning</span>
                 <BarChart3 className="w-5 h-5 text-amber-400" />
               </div>
-              <p className="text-4xl font-black text-white mt-4">Active</p>
+              <p className="text-4xl font-black text-white mt-4">{wpResult ? "Done" : "Upload"}</p>
             </motion.div>
           </div>
         </>
@@ -382,56 +620,217 @@ function HRDashboard() {
       <div>
         <div className="flex items-center justify-between mb-6 pl-2 border-l-4 border-indigo-500">
           <h2 className="text-xl font-bold text-white">
-            {viewMode === "pipeline" ? "Candidate Pipeline" : viewMode === "offered" ? "Offered Candidates" : viewMode === "hired" ? "Hired Candidates" : viewMode === "rejected" ? "Rejected Candidates" : viewMode === "interviews" ? "Mock Interview Scores" : "Workforce Strategy"}
+            {viewMode === "pipeline" ? "Candidate Pipeline" : viewMode === "offered" ? "Offered Candidates" : viewMode === "hired" ? "Hired Candidates" : viewMode === "rejected" ? "Rejected Candidates" : viewMode === "interviews" ? "Mock Interview Scores" : "Workforce Planning"}
           </h2>
         </div>
 
-        {viewMode === "strategy" ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in duration-500">
-            <div className="bg-slate-800/40 border border-slate-700 p-8 rounded-3xl shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                <BarChart3 className="w-6 h-6 mr-3 text-indigo-400" />
-                Hiring Forecast
-              </h3>
-              <div className="space-y-4">
-                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
-                  <p className="text-slate-400 text-sm mb-1 uppercase tracking-widest font-bold">Planned Hires</p>
-                  <p className="text-3xl font-black text-white">{strategyData?.hiring_plan || "Onboard 10 engineers by June"}</p>
-                </div>
-                <div className="bg-indigo-500/10 p-4 rounded-xl border border-indigo-500/30">
-                  <p className="text-indigo-400 text-sm font-semibold mb-1">Recommendation</p>
-                  <p className="text-white text-sm">Focus on Senior Fullstack roles for Q3 scaling.</p>
+        {viewMode === "workforce" ? (
+          <div className="space-y-8 animate-in fade-in duration-500 max-w-4xl mx-auto">
+
+            {/* Upload Card */}
+            {!wpResult && (
+              <div className="relative overflow-hidden bg-gradient-to-br from-slate-800/80 to-amber-950/20 border border-amber-500/20 rounded-[2rem] p-8 shadow-2xl">
+                <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-amber-500/5 rounded-full blur-[80px]" />
+                <div className="relative z-10">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="p-3 bg-amber-500/20 rounded-2xl border border-amber-500/30">
+                      <BarChart3 className="w-7 h-7 text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-amber-400 font-black uppercase tracking-[0.25em]">Sub-Agent 4</p>
+                      <h3 className="text-xl font-black text-white">Workforce Planning AI</h3>
+                    </div>
+                  </div>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                    Upload your <strong className="text-white">project plan / roadmap PDF</strong> and the AI will analyse it against the
+                    current employee database to tell you exactly <strong className="text-white">how many people to hire, in which domain, for next month</strong>.
+                  </p>
+
+                  {/* Drop Zone */}
+                  <label
+                    htmlFor="wp-pdf-input"
+                    className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-2xl cursor-pointer transition-all
+                      ${wpFile ? "border-amber-400 bg-amber-500/10" : "border-slate-600 hover:border-amber-400 hover:bg-amber-500/5 bg-slate-900/40"}`}
+                  >
+                    {wpFile ? (
+                      <div className="text-center">
+                        <FileText className="w-10 h-10 text-amber-400 mx-auto mb-2" />
+                        <p className="text-amber-300 font-bold text-sm">{wpFile.name}</p>
+                        <p className="text-slate-500 text-xs mt-1">{(wpFile.size / 1024).toFixed(1)} KB — click to change</p>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <FileText className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+                        <p className="text-slate-300 font-bold">Click to upload Project PDF</p>
+                        <p className="text-slate-500 text-xs mt-1">Supports PDF files only</p>
+                      </div>
+                    )}
+                    <input
+                      id="wp-pdf-input"
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={e => { setWpFile(e.target.files[0] || null); setWpError(""); }}
+                    />
+                  </label>
+
+                  {wpError && (
+                    <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                      <p className="text-red-400 text-xs font-bold">{wpError}</p>
+                    </div>
+                  )}
+
+                  <button
+                    disabled={!wpFile || wpLoading}
+                    onClick={async () => {
+                      if (!wpFile) return;
+                      setWpLoading(true); setWpError("");
+                      const fd = new FormData();
+                      fd.append("project_pdf", wpFile);
+                      try {
+                        const res = await axios.post(`${BASE_URL}/workforce-planning/`, fd, {
+                          headers: { "Content-Type": "multipart/form-data" },
+                        });
+                        setWpResult(res.data);
+                      } catch (err) {
+                        setWpError(err.response?.data?.error || "Analysis failed. Please try again.");
+                      } finally {
+                        setWpLoading(false);
+                      }
+                    }}
+                    className="mt-6 w-full flex items-center justify-center space-x-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-amber-600/20 active:scale-[0.98] text-base"
+                  >
+                    {wpLoading ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Analysing with AI...</span>
+                      </>
+                    ) : (
+                      <><BarChart3 className="w-5 h-5" /><span>Analyse & Generate Hiring Plan</span></>
+                    )}
+                  </button>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="bg-slate-800/40 border border-slate-700 p-8 rounded-3xl shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                <ShieldAlert className="w-6 h-6 mr-3 text-amber-400" />
-                Skill Shortage Alerts
-              </h3>
-              <div className="flex flex-wrap gap-3">
-                {strategyData?.skill_shortage_alerts?.map((skill, i) => (
-                  <span key={i} className="px-4 py-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 text-sm font-bold">
-                    {skill}
-                  </span>
-                )) || ["AI Architecture", "Cybersecurity"].map((skill, i) => (
-                  <span key={i} className="px-4 py-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 text-sm font-bold">
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </div>
+            {/* Results */}
+            {wpResult && (() => {
+              const a = wpResult.analysis;
+              const priorityColor = (p) => p === "Critical" ? "bg-red-500/20 text-red-400 border-red-500/30" : p === "High" ? "bg-amber-500/20 text-amber-400 border-amber-500/30" : "bg-indigo-500/20 text-indigo-400 border-indigo-500/30";
+              return (
+                <div className="space-y-6">
+                  {/* Header with reset */}
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-white pl-3 border-l-4 border-amber-500">AI Hiring Recommendations — Next Month</h3>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => downloadWorkforcePDF(wpResult)}
+                        className="text-xs text-emerald-400 hover:text-white flex items-center space-x-1 bg-emerald-500/10 hover:bg-emerald-500 px-3 py-2 rounded-xl border border-emerald-500/30 transition-all font-bold"
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1" /> Download PDF
+                      </button>
+                      <button onClick={() => { setWpResult(null); setWpFile(null); }} className="text-xs text-slate-400 hover:text-white flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl border border-slate-700 transition-all">
+                        <RotateCcw className="w-3 h-3 mr-1" /> Analyse another
+                      </button>
+                    </div>
+                  </div>
 
-            <div className="md:col-span-2 bg-gradient-to-r from-slate-800/60 to-indigo-900/20 border border-slate-700 p-8 rounded-3xl shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                <ShieldCheck className="w-6 h-6 mr-3 text-emerald-400" />
-                Workforce Roadmap
-              </h3>
-              <p className="text-slate-300 leading-relaxed text-lg italic">
-                "{strategyData?.workforce_roadmap || "Shift towards decentralized AI teams by 2026"}"
-              </p>
-            </div>
+                  {/* KPI Row */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 text-center">
+                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Current Employees</p>
+                      <p className="text-4xl font-black text-white">{a.current_strength ?? wpResult.current_workforce.reduce((s, w) => s + w.count, 0)}</p>
+                    </div>
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 text-center">
+                      <p className="text-[10px] text-amber-400 font-black uppercase tracking-widest mb-1">Hires Needed</p>
+                      <p className="text-4xl font-black text-amber-300">{a.total_hires_needed_next_month}</p>
+                    </div>
+                    <div className="col-span-2 md:col-span-1 bg-slate-800/60 border border-slate-700 rounded-2xl p-5">
+                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Current Workforce</p>
+                      {wpResult.current_workforce.length === 0 ? (
+                        <p className="text-slate-500 text-xs">No hired employees yet</p>
+                      ) : wpResult.current_workforce.map((w, i) => (
+                        <div key={i} className="flex justify-between text-xs py-0.5">
+                          <span className="text-slate-400 truncate">{w.role}</span>
+                          <span className="text-white font-bold ml-2">{w.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Executive Summary */}
+                  <div className="bg-gradient-to-r from-slate-800/60 to-amber-950/20 border border-amber-500/20 rounded-2xl p-6">
+                    <p className="text-[10px] text-amber-400 font-black uppercase tracking-widest mb-2">Executive Summary</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{a.executive_summary}</p>
+                  </div>
+
+                  {/* Per-Domain Hiring Recs */}
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-4">Hiring Recommendations by Domain</p>
+                    <div className="space-y-4">
+                      {(a.hiring_recommendations || []).map((rec, i) => (
+                        <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+                          className="bg-slate-800/70 border border-slate-700/70 rounded-2xl overflow-hidden">
+                          <div className="p-5 flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${priorityColor(rec.priority)}`}>{rec.priority}</span>
+                                <h4 className="text-white font-bold">{rec.domain}</h4>
+                              </div>
+                              <p className="text-slate-400 text-xs leading-relaxed mb-3">{rec.reason}</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {(rec.required_skills || []).map((s, j) => (
+                                  <span key={j} className="text-[10px] px-2 py-0.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-lg font-bold">{s}</span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="text-center shrink-0">
+                              <p className="text-4xl font-black text-amber-400">{rec.count}</p>
+                              <p className="text-[9px] text-slate-500 font-bold mt-0.5">to hire</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bottom 3 panels */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Skill Gaps */}
+                    <div className="bg-slate-800/40 border border-red-500/20 rounded-2xl p-5">
+                      <p className="text-[10px] text-red-400 font-black uppercase tracking-widest mb-3">Skill Gaps Identified</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(a.skill_gaps_identified || []).map((g, i) => (
+                          <span key={i} className="text-xs px-2 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg font-bold">{g}</span>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Timeline */}
+                    <div className="bg-slate-800/40 border border-indigo-500/20 rounded-2xl p-5">
+                      <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-3">Suggested Timeline</p>
+                      <p className="text-slate-300 text-xs leading-relaxed">{a.suggested_timeline}</p>
+                    </div>
+                  </div>
+
+                  {/* Risk Box */}
+                  <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-5">
+                    <p className="text-[10px] text-red-400 font-black uppercase tracking-widest mb-2">Risk if Hires Not Made</p>
+                    <p className="text-slate-300 text-sm leading-relaxed">{a.risk_if_not_hired}</p>
+                  </div>
+
+                  {/* Notes */}
+                  {a.additional_notes && (
+                    <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-5">
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Additional Notes</p>
+                      <p className="text-slate-300 text-sm leading-relaxed">{a.additional_notes}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         ) : viewMode === "interviews" ? (
           <div className="space-y-4 animate-in fade-in duration-500">

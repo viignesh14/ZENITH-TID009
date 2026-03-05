@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Briefcase, ArrowRight, Zap, Code, ShieldCheck, Database, Layout, Search, FileText, CheckCircle, Clock, XCircle, LogOut, Video, BookOpen, GraduationCap, Award, BrainCircuit, Newspaper, Users, Wallet, Shield, MapPin, Mail, Phone, Calendar } from "lucide-react";
+import { Briefcase, ArrowRight, Zap, Code, ShieldCheck, Database, Layout, Search, FileText, CheckCircle, Clock, XCircle, LogOut, Video, BookOpen, GraduationCap, Award, BrainCircuit, Newspaper, Users, Wallet, Shield, MapPin, Mail, Phone, Calendar, Target, Loader2 } from "lucide-react";
 import MockInterviewPage from "./MockInterview";
+import { supabase } from "../supabaseClient";
 
 const BASE_URL = "http://127.0.0.1:8000/api";
 
@@ -45,25 +46,46 @@ function CandidateDashboard() {
   const [talentData, setTalentData] = useState(null);
   const [talentLoading, setTalentLoading] = useState(false);
   const [selectedMockVacancy, setSelectedMockVacancy] = useState(null); // for mock interview
+  const [staffTab, setStaffTab] = useState("overview"); // "overview" or "upgrade"
 
   // Initialize email from localStorage if present
   useEffect(() => {
-    const savedEmail = localStorage.getItem("candidateEmail");
-    if (savedEmail) {
-      setSearchEmail(savedEmail);
-      autoFetchApplications(savedEmail);
-    }
+    const initDashboard = async () => {
+      // 1. Check Supabase session first (Highest Truth)
+      const { data: { session } } = await supabase.auth.getSession();
+      let email = session?.user?.email;
+
+      // 2. Fallback to localStorage if no session (for persistence/demo)
+      if (!email) {
+        email = localStorage.getItem("candidateEmail");
+      }
+
+      if (email) {
+        setSearchEmail(email);
+        localStorage.setItem("candidateEmail", email); // Sync
+        autoFetchApplications(email);
+
+        // Listen for auth changes to clear email if they log out elsewhere
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+          if (!session) handleLogout();
+        });
+
+        // Poll every 45 seconds to catch status changes
+        const interval = setInterval(() => autoFetchApplications(email), 45000);
+        return () => {
+          clearInterval(interval);
+          subscription.unsubscribe();
+        }
+      }
+    };
+
+    initDashboard();
+
     const savedProfile = localStorage.getItem("candidateProfile");
     if (savedProfile) {
       try {
         setProfile(JSON.parse(savedProfile));
       } catch (e) { }
-    }
-
-    if (savedEmail) {
-      // Poll every 30 seconds to catch status changes (like being fired or hired)
-      const interval = setInterval(() => autoFetchApplications(savedEmail), 30000);
-      return () => clearInterval(interval);
     }
   }, []);
 
@@ -94,7 +116,7 @@ function CandidateDashboard() {
     setLoadingApps(true);
     setSearched(true);
     try {
-      const res = await axios.get(`${BASE_URL}/candidate-applications/?email=${encodeURIComponent(emailToSearch)}`);
+      const res = await axios.get(`${BASE_URL}/candidate-applications/?email=${encodeURIComponent(emailToSearch.toLowerCase())}`);
       setApplications(res.data);
     } catch (err) {
       console.error("Failed to fetch applications:", err);
@@ -115,10 +137,19 @@ function CandidateDashboard() {
     }
   };
 
+  // Handle tab switching based on hired status (Automatic Landing)
   useEffect(() => {
-    const hired = applications.find(app => (app.status === "hired"));
-    if (hired && searchEmail) {
-      fetchTalentData(searchEmail);
+    if (applications.length > 0) {
+      const isHired = applications.some(app => app.status === "hired");
+      if (isHired) {
+        // If hired, they are an employee -> show growth plan / welcome panel in My Applications
+        setActiveTab("applications");
+        if (searchEmail) fetchTalentData(searchEmail);
+      } else {
+        // If not hired (fired/rejected/new), show open roles so they can apply immediately
+        setActiveTab("roles");
+        setTalentData(null);
+      }
     }
   }, [applications]);
 
@@ -208,6 +239,7 @@ function CandidateDashboard() {
       <div className="space-y-8 pb-16 max-w-6xl mx-auto">
         {/* Official Staff Portal Hero */}
         <div className="relative overflow-hidden bg-gradient-to-br from-indigo-950/90 to-slate-900 border border-slate-700/50 backdrop-blur-3xl p-8 md:p-12 rounded-[2.5rem] shadow-2xl flex flex-col md:flex-row justify-between items-center text-left">
+          {/* ... (Existing Hero Content) ... */}
           <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none" />
           <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
 
@@ -273,163 +305,268 @@ function CandidateDashboard() {
           </div>
         </div>
 
-        {/* Core Staff Dashboard Sections */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Staff Sub-Navigation */}
+        <div className="flex justify-center md:justify-start gap-4 mb-2">
+          <button
+            onClick={() => setStaffTab("overview")}
+            className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center ${staffTab === "overview"
+              ? "bg-indigo-600 text-white shadow-xl shadow-indigo-600/20"
+              : "bg-slate-800/40 text-slate-400 hover:text-white border border-slate-700/50"
+              }`}
+          >
+            <Layout className="w-3.5 h-3.5 mr-2" />
+            Overview
+          </button>
+          <button
+            onClick={() => setStaffTab("upgrade")}
+            className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center ${staffTab === "upgrade"
+              ? "bg-purple-600 text-white shadow-xl shadow-purple-600/20"
+              : "bg-slate-800/40 text-slate-400 hover:text-white border border-slate-700/50"
+              }`}
+          >
+            <Award className="w-3.5 h-3.5 mr-2" />
+            Upgrade Skill
+          </button>
+        </div>
 
-          {/* Left Column: Growth & Docs */}
-          <div className="lg:col-span-2 space-y-8">
+        {staffTab === "overview" ? (
+          /* Core Staff Dashboard Sections */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Left Column: Growth & Docs */}
+            <div className="lg:col-span-2 space-y-8">
+              {/* AI Growth Section */}
+              <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-bold text-white flex items-center">
+                    <BrainCircuit className="w-6 h-6 mr-3 text-indigo-400" />
+                    AI Growth Strategy
+                  </h2>
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-3 py-1 rounded-full font-black uppercase tracking-widest border border-indigo-500/20">Active Analysis</span>
+                </div>
 
-            {/* AI Growth Section */}
-            <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-white flex items-center">
-                  <BrainCircuit className="w-6 h-6 mr-3 text-indigo-400" />
-                  AI Growth Strategy
-                </h2>
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-3 py-1 rounded-full font-black uppercase tracking-widest border border-indigo-500/20">Active Analysis</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-700/30">
-                  <h3 className="text-sm font-bold text-slate-300 mb-4 uppercase tracking-widest flex items-center">
-                    <Zap className="w-4 h-4 mr-2 text-amber-400" />
-                    Promotion Path
-                  </h3>
-                  <p className="text-slate-400 text-sm leading-relaxed mb-6">
-                    {talentData?.career_path?.promotion_roadmap || "AI is synthesizing your roadmap based on current performance benchmarks..."}
-                  </p>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-1">
-                      <span className="text-slate-500 font-bold">Readiness Score</span>
-                      <span className="text-indigo-400 font-bold">{talentData?.career_path?.readiness_score || 0}%</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-700/30">
+                    <h3 className="text-sm font-bold text-slate-300 mb-4 uppercase tracking-widest flex items-center">
+                      <Zap className="w-4 h-4 mr-2 text-amber-400" />
+                      Promotion Path
+                    </h3>
+                    <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                      {talentData?.career_path?.promotion_roadmap || "AI is synthesizing your roadmap based on current performance benchmarks..."}
+                    </p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-1">
+                        <span className="text-slate-500 font-bold">Readiness Score</span>
+                        <span className="text-indigo-400 font-bold">{talentData?.career_path?.readiness_score || 0}%</span>
+                      </div>
+                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 p-0.5">
+                        <motion.div initial={{ width: 0 }} animate={{ width: `${talentData?.career_path?.readiness_score || 0}%` }} className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+                      </div>
                     </div>
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 p-0.5">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${talentData?.career_path?.readiness_score || 0}%` }} className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
+                  </div>
+
+                  <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-700/30">
+                    <h3 className="text-sm font-bold text-slate-300 mb-4 uppercase tracking-widest flex items-center">
+                      <Users className="w-4 h-4 mr-2 text-emerald-400" />
+                      Assigned Mentor
+                    </h3>
+                    <p className="text-slate-400 text-sm leading-relaxed mb-4">
+                      {talentData?.assigned_mentor_role || "Assigning a senior mentor based on your tech stack..."}
+                    </p>
+                    <div className="flex items-center p-3 bg-emerald-500/5 rounded-xl border border-emerald-500/10">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center mr-3">
+                        <Users className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <span className="text-[10px] text-emerald-400 font-black uppercase tracking-widest">Connect Requested</span>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-slate-900/40 p-6 rounded-2xl border border-slate-700/30">
-                  <h3 className="text-sm font-bold text-slate-300 mb-4 uppercase tracking-widest flex items-center">
-                    <BookOpen className="w-4 h-4 mr-2 text-emerald-400" />
-                    Upskill Tasks
+              {/* Documents & Compliance */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center">
+                    <FileText className="w-5 h-5 mr-3 text-emerald-400" />
+                    My Documents
                   </h3>
                   <div className="space-y-3">
-                    {talentData?.upskilling_plans?.recommended_courses?.slice(0, 3).map((course, i) => (
-                      <div key={i} className="flex items-start bg-slate-800/50 p-3 rounded-xl border border-slate-700/40 group hover:border-emerald-500/30 transition-colors">
-                        <CheckCircle className="w-4 h-4 mr-3 text-emerald-500 mt-0.5" />
-                        <span className="text-xs text-slate-300 font-medium">{course}</span>
-                      </div>
-                    )) || ["Advanced Architecture", "Team Leadership", "Cloud Infrastructure"].map((c, i) => (
-                      <div key={i} className="flex items-start bg-slate-800/20 p-3 rounded-xl border border-slate-700/40 opacity-40">
-                        <Clock className="w-4 h-4 mr-3 text-slate-600 mt-0.5" />
-                        <span className="text-xs text-slate-500 font-medium">{c}</span>
+                    {['Employment_Contract.pdf', 'Employee_Handbook.pdf', 'Benefits_Guide.pdf'].map((doc, i) => (
+                      <div key={i} className="group flex items-center justify-between p-4 bg-slate-900/40 rounded-2xl border border-slate-700/30 hover:bg-slate-800/60 transition-all cursor-pointer">
+                        <div className="flex items-center">
+                          <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center mr-4 border border-slate-700/50">
+                            <FileText className="w-5 h-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
+                          </div>
+                          <span className="text-sm text-slate-300 font-medium truncate max-w-[140px]">{doc}</span>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center">
+                    <Wallet className="w-5 h-5 mr-3 text-amber-400" />
+                    Payroll & Benefits
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-slate-900/40 rounded-2xl border border-slate-700/30 flex justify-between items-center">
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Next Pay Cycle</p>
+                        <p className="text-sm font-bold text-white">March 31, 2026</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Status</p>
+                        <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md font-bold border border-emerald-500/20">VERIFIED</span>
+                      </div>
+                    </div>
+                    <button className="w-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 font-bold py-3 px-6 rounded-2xl border border-slate-700/50 transition-all active:scale-[0.98] text-sm">
+                      View Benefits Package
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Documents & Compliance */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
+            {/* Right Column: News & Team */}
+            <div className="space-y-8">
+              {/* Announcements */}
+              <div className="bg-indigo-600/10 border border-indigo-500/20 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-                  <FileText className="w-5 h-5 mr-3 text-emerald-400" />
-                  My Documents
+                  <Newspaper className="w-5 h-5 mr-3 text-indigo-400" />
+                  Latest Memos
                 </h3>
-                <div className="space-y-3">
-                  {['Employment_Contract.pdf', 'Employee_Handbook.pdf', 'Benefits_Guide.pdf'].map((doc, i) => (
-                    <div key={i} className="group flex items-center justify-between p-4 bg-slate-900/40 rounded-2xl border border-slate-700/30 hover:bg-slate-800/60 transition-all cursor-pointer">
-                      <div className="flex items-center">
-                        <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center mr-4 border border-slate-700/50">
-                          <FileText className="w-5 h-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
-                        </div>
-                        <span className="text-sm text-slate-300 font-medium truncate max-w-[140px]">{doc}</span>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
-                    </div>
-                  ))}
+                <div className="space-y-6">
+                  <div className="border-l-2 border-indigo-500 pl-4 py-1">
+                    <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-1">Company-wide • Today</p>
+                    <p className="text-sm font-bold text-white mb-1 leading-snug">Nexus Summit 2026</p>
+                    <p className="text-xs text-slate-400 line-clamp-2">Register now for our semi-annual engineering summit on AI Ethics.</p>
+                  </div>
+                  <div className="border-l-2 border-slate-700 pl-4 py-1">
+                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">HR Update • Yesterday</p>
+                    <p className="text-sm font-bold text-white mb-1 leading-snug">New Wellness Perks</p>
+                    <p className="text-xs text-slate-400 line-clamp-2">Check the portal for the new health insurance premium upgrades.</p>
+                  </div>
                 </div>
               </div>
 
+              {/* Team Directory Placeholder */}
               <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
                 <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-                  <Wallet className="w-5 h-5 mr-3 text-amber-400" />
-                  Payroll & Benefits
+                  <Users className="w-5 h-5 mr-3 text-emerald-400" />
+                  Your Team
                 </h3>
                 <div className="space-y-4">
-                  <div className="p-4 bg-slate-900/40 rounded-2xl border border-slate-700/30 flex justify-between items-center">
-                    <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Next Pay Cycle</p>
-                      <p className="text-sm font-bold text-white">March 31, 2026</p>
+                  {[
+                    { name: 'Sarah Chen', role: 'Team Lead', color: 'bg-emerald-500' },
+                    { name: 'Alex Rivera', role: 'DevOps', color: 'bg-amber-500' },
+                    { name: 'James Wilson', role: 'Product', color: 'bg-indigo-500' }
+                  ].map((member, i) => (
+                    <div key={i} className="flex items-center p-3 bg-slate-900/40 rounded-2xl border border-slate-700/20">
+                      <div className={`w-9 h-9 rounded-full ${member.color} flex items-center justify-center text-white font-black text-[10px] mr-3 shadow-lg`}>
+                        {member.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-white leading-none mb-1">{member.name}</p>
+                        <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">{member.role}</p>
+                      </div>
+                      <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     </div>
-                    <div className="text-right">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Status</p>
-                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md font-bold border border-emerald-500/20">VERIFIED</span>
-                    </div>
-                  </div>
-                  <button className="w-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 font-bold py-3 px-6 rounded-2xl border border-slate-700/50 transition-all active:scale-[0.98] text-sm">
-                    View Benefits Package
+                  ))}
+                  <button className="w-full text-center text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-2 hover:text-white transition-colors">
+                    View Full Directory
                   </button>
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Right Column: News & Team */}
-          <div className="space-y-8">
-
-            {/* Announcements */}
-            <div className="bg-indigo-600/10 border border-indigo-500/20 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-                <Newspaper className="w-5 h-5 mr-3 text-indigo-400" />
-                Latest Memos
-              </h3>
-              <div className="space-y-6">
-                <div className="border-l-2 border-indigo-500 pl-4 py-1">
-                  <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-1">Company-wide • Today</p>
-                  <p className="text-sm font-bold text-white mb-1 leading-snug">Nexus Summit 2026</p>
-                  <p className="text-xs text-slate-400 line-clamp-2">Register now for our semi-annual engineering summit on AI Ethics.</p>
-                </div>
-                <div className="border-l-2 border-slate-700 pl-4 py-1">
-                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">HR Update • Yesterday</p>
-                  <p className="text-sm font-bold text-white mb-1 leading-snug">New Wellness Perks</p>
-                  <p className="text-xs text-slate-400 line-clamp-2">Check the portal for the new health insurance premium upgrades.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Team Directory Placeholder */}
+        ) : (
+          /* Upgrade Skills View */
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
             <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-                <Users className="w-5 h-5 mr-3 text-emerald-400" />
-                Your Team
-              </h3>
-              <div className="space-y-4">
-                {[
-                  { name: 'Sarah Chen', role: 'Team Lead', color: 'bg-emerald-500' },
-                  { name: 'Alex Rivera', role: 'DevOps', color: 'bg-amber-500' },
-                  { name: 'James Wilson', role: 'Product', color: 'bg-indigo-500' }
-                ].map((member, i) => (
-                  <div key={i} className="flex items-center p-3 bg-slate-900/40 rounded-2xl border border-slate-700/20">
-                    <div className={`w-9 h-9 rounded-full ${member.color} flex items-center justify-center text-white font-black text-[10px] mr-3 shadow-lg`}>
-                      {member.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-white leading-none mb-1">{member.name}</p>
-                      <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">{member.role}</p>
-                    </div>
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-3xl font-black text-white flex items-center">
+                    <Award className="w-8 h-8 mr-4 text-purple-400" />
+                    Skill Multiplier
+                  </h2>
+                  <p className="text-slate-400 mt-2">AI-curated learning paths to accelerate your career within the {hiredApp.vacancy_title} domain.</p>
+                </div>
+                <div className="hidden md:block">
+                  <div className="px-4 py-2 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+                    <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Growth Phase: Accelerating</span>
                   </div>
-                ))}
-                <button className="w-full text-center text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-2 hover:text-white transition-colors">
-                  View Full Directory
-                </button>
+                </div>
               </div>
+
+              {talentData ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                  <div className="space-y-8">
+                    <div className="bg-slate-900/60 p-8 rounded-[2rem] border border-slate-700/30 relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/5 rounded-full -mr-24 -mt-24 blur-3xl group-hover:bg-purple-500/10 transition-all duration-500" />
+                      <h3 className="text-sm font-black text-purple-400 mb-6 uppercase tracking-[0.3em] flex items-center">
+                        <Zap className="w-4 h-4 mr-2" />
+                        AI Learning Summary
+                      </h3>
+                      <p className="text-lg text-white font-medium leading-relaxed leading-relaxed">
+                        {talentData.upskilling_summary}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {talentData.identified_skill_gaps?.map((gap, i) => (
+                        <div key={i} className="flex items-center p-4 bg-slate-900/40 rounded-2xl border border-slate-700/20">
+                          <div className="w-8 h-8 rounded-lg bg-red-400/10 flex items-center justify-center mr-4">
+                            <Target className="w-4 h-4 text-red-400" />
+                          </div>
+                          <span className="text-xs font-bold text-slate-300">{gap}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black text-slate-500 mb-2 uppercase tracking-[0.4em]">Recommended Resources</h3>
+                    <div className="space-y-4">
+                      {talentData.course_recommendations?.map((course, i) => (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.1 }}
+                          onClick={() => window.open(course.direct_url || `https://www.google.com/search?q=${encodeURIComponent(course.title + " " + course.platform)}`, '_blank')}
+                          className="group flex items-center p-6 bg-slate-900/80 border border-slate-700/40 rounded-3xl hover:border-purple-500/50 transition-all cursor-pointer shadow-lg hover:shadow-purple-500/5"
+                        >
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500/20 to-indigo-500/10 flex items-center justify-center mr-6 group-hover:scale-110 transition-transform shadow-inner">
+                            <GraduationCap className="w-7 h-7 text-purple-400" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-1">{course.platform}</p>
+                            <h4 className="text-lg font-bold text-white group-hover:text-purple-300 transition-colors leading-tight">{course.title}</h4>
+                            <p className="text-xs text-slate-500 mt-2 font-medium">{course.focus_area}</p>
+                          </div>
+                          <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center group-hover:bg-purple-600 transition-colors">
+                            <ArrowRight className="w-5 h-5 text-slate-500 group-hover:text-white transition-all transform group-hover:translate-x-1" />
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    <div className="p-6 bg-indigo-500/5 border border-indigo-500/10 rounded-3xl">
+                      <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-2">Pro Tip</p>
+                      <p className="text-xs text-slate-500 leading-relaxed">Complete these courses to increase your "Readiness Score" for the next internal assessment.</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-12 text-center border border-slate-700 border-dashed rounded-[2rem]">
+                  <Loader2 className="w-10 h-10 text-slate-600 animate-spin mx-auto mb-4" />
+                  <p className="text-slate-500">Retrieving personalized skill paths...</p>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -855,22 +992,65 @@ function CandidateDashboard() {
                                 Congratulations on joining our company! Your onboarding is officially complete. Below is your AI-generated growth roadmap for the first 90 days.
                               </p>
 
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-slate-900 shadow-xl border border-slate-700/50 p-4 rounded-2xl relative overflow-hidden group">
-                                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
-                                  <h5 className="text-indigo-400 font-black uppercase tracking-widest text-[10px] mb-3 flex items-center">
-                                    <Zap className="w-3 h-3 mr-2" /> Upskilling Path
-                                  </h5>
-                                  <p className="text-sm text-white font-medium">AWS Certified Solutions Architect + GraphQL Specialist Track</p>
+                              {talentData ? (
+                                <div className="mt-8 space-y-6">
+                                  {/* Upskilling & Mentor Grid */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-slate-900 shadow-xl border border-slate-700/50 p-4 rounded-2xl relative overflow-hidden group">
+                                      <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
+                                      <h5 className="text-indigo-400 font-black uppercase tracking-widest text-[10px] mb-3 flex items-center">
+                                        <Zap className="w-3 h-3 mr-2" /> AI Upskilling Path
+                                      </h5>
+                                      <p className="text-sm text-white font-medium">{talentData.upskilling_summary}</p>
+                                    </div>
+                                    <div className="bg-slate-900 shadow-xl border border-slate-700/50 p-4 rounded-2xl relative overflow-hidden group">
+                                      <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
+                                      <h5 className="text-emerald-400 font-black uppercase tracking-widest text-[10px] mb-3 flex items-center">
+                                        <Users className="w-3 h-3 mr-2" /> Assigned Mentor
+                                      </h5>
+                                      <p className="text-sm text-white font-medium">{talentData.assigned_mentor_role}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Recommended Courses */}
+                                  <div>
+                                    <h5 className="text-white font-black uppercase tracking-[0.2em] text-[10px] mb-4 flex items-center">
+                                      <BookOpen className="w-3 h-3 mr-2 text-indigo-400" /> Recommended Online Courses
+                                    </h5>
+                                    <div className="grid grid-cols-1 gap-3">
+                                      {talentData.course_recommendations?.map((course, i) => (
+                                        <div key={i} className="flex items-center p-3 bg-slate-900/60 border border-slate-800 rounded-xl hover:border-indigo-500/30 transition-all group cursor-pointer" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(course.title + " " + course.platform)}`, '_blank')}>
+                                          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center mr-4 border border-indigo-500/20">
+                                            <GraduationCap className="w-5 h-5 text-indigo-400" />
+                                          </div>
+                                          <div className="flex-1">
+                                            <p className="text-xs font-bold text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{course.title}</p>
+                                            <p className="text-[10px] text-slate-500 font-medium">{course.platform} • {course.focus_area}</p>
+                                          </div>
+                                          <ArrowRight className="w-4 h-4 text-slate-700 group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all" />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="bg-slate-900 shadow-xl border border-slate-700/50 p-4 rounded-2xl relative overflow-hidden group">
-                                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
-                                  <h5 className="text-emerald-400 font-black uppercase tracking-widest text-[10px] mb-3 flex items-center">
-                                    <Users className="w-3 h-3 mr-2" /> Assigned Mentor
-                                  </h5>
-                                  <p className="text-sm text-white font-medium">Senior Engineering Team Lead (Mentorship Pairing)</p>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                                  <div className="bg-slate-900 shadow-xl border border-slate-700/50 p-4 rounded-2xl relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16" />
+                                    <h5 className="text-indigo-400 font-black uppercase tracking-widest text-[10px] mb-3 flex items-center">
+                                      <Zap className="w-3 h-3 mr-2" /> Upskilling Path
+                                    </h5>
+                                    <p className="text-sm text-white font-medium">AWS Certified Solutions Architect + GraphQL</p>
+                                  </div>
+                                  <div className="bg-slate-900 shadow-xl border border-slate-700/50 p-4 rounded-2xl relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full -mr-16 -mt-16" />
+                                    <h5 className="text-emerald-400 font-black uppercase tracking-widest text-[10px] mb-3 flex items-center">
+                                      <Users className="w-3 h-3 mr-2" /> Assigned Mentor
+                                    </h5>
+                                    <p className="text-sm text-white font-medium">Senior Engineering Team Lead</p>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
 
                             <div className="w-full md:w-64 space-y-3">

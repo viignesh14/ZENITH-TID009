@@ -9,6 +9,7 @@ from .views import (
     delete_vacancy,
     candidate_applications,
     get_workforce_strategy,
+    workforce_planning,
     get_talent_management,
     candidate_negotiate,
     generate_mock_interview,
@@ -16,6 +17,7 @@ from .views import (
     get_mock_interview_result,
     get_candidate_interview_scores,
     delete_mock_interview,
+    company_employees,
 )
 
 urlpatterns = [
@@ -28,6 +30,7 @@ urlpatterns = [
     path("vacancies/<int:pk>/", delete_vacancy),
     path("candidate-applications/", candidate_applications),
     path("get-strategy/", get_workforce_strategy),
+    path("workforce-planning/", workforce_planning),
     path("get-talent/", get_talent_management),
     path("candidate-negotiate/", candidate_negotiate),
     # Sub-Agent 6: Mock Interview with AI
@@ -36,4 +39,5 @@ urlpatterns = [
     path("mock-interview/result/", get_mock_interview_result),
     path("mock-interview/hr-scores/", get_candidate_interview_scores),
     path("mock-interview/<int:pk>/delete/", delete_mock_interview),
+    path("company-employees/", company_employees),
 ]

@@ -445,11 +445,13 @@ def candidate_applications(request):
     if not email:
         return Response({"error": "email required"}, status=400)
     
-    candidates = Candidate.objects.filter(email=email).order_by("-created_at")
+    candidates = Candidate.objects.filter(email__iexact=email).order_by("-created_at")
     data = []
     for c in candidates:
         data.append({
             "id": c.id,
+            "name": c.name,
+            "email": c.email,
             "vacancy_title": c.vacancy.title,
             "status": c.status,
             "created_at": c.created_at,
@@ -472,6 +474,59 @@ def get_workforce_strategy(request):
     return Response(result)
 
 
+@api_view(["POST"])
+def workforce_planning(request):
+    """
+    HR uploads a project/roadmap PDF.
+    The agent reads current hired employees from the DB and the PDF,
+    then returns AI-powered next-month hiring recommendations.
+    """
+    project_pdf = request.FILES.get("project_pdf")
+    if not project_pdf:
+        return Response({"error": "project_pdf file is required"}, status=400)
+
+    # ── Extract PDF text ─────────────────────────────────────────────────────
+    from .utils.resume_parser import extract_text_from_pdf
+    try:
+        pdf_text = extract_text_from_pdf(project_pdf)
+    except Exception as e:
+        return Response({"error": f"Failed to read PDF: {str(e)}"}, status=400)
+
+    if not pdf_text or len(pdf_text.strip()) < 30:
+        return Response({"error": "The uploaded PDF appears to be empty or unreadable."}, status=400)
+
+    # ── Gather current workforce from DB ──────────────────────────────────────
+    from django.db.models import Count
+    hired_qs = (
+        Candidate.objects
+        .filter(status="hired")
+        .values("vacancy__title")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    current_workforce = [
+        {"role": row["vacancy__title"], "count": row["count"]}
+        for row in hired_qs
+    ]
+
+    # ── Call AI Agent ─────────────────────────────────────────────────────────
+    from .workforce_strategy.strategy import WorkforceStrategyAgent
+    agent = WorkforceStrategyAgent()
+    try:
+        result = agent.analyse_workforce_plan(
+            project_pdf_text=pdf_text,
+            current_workforce=current_workforce,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({"error": f"AI analysis failed: {str(e)}"}, status=500)
+
+    return Response({
+        "current_workforce": current_workforce,
+        "analysis": result,
+    })
+
 @api_view(["GET"])
 def get_talent_management(request):
     email = request.GET.get("email")
@@ -489,7 +544,7 @@ def get_talent_management(request):
     data = {
         "employee_id": candidate.id,
         "name": candidate.name,
-        "current_role": candidate.ai_recommendation or "Software Engineer",
+        "current_role": candidate.vacancy.title,
         "performance_history": "Exceeds Expectations"
     }
     
@@ -700,3 +755,57 @@ def delete_mock_interview(request, pk):
         return Response({"message": "Mock interview result deleted successfully"}, status=200)
     except MockInterview.DoesNotExist:
         return Response({"error": "Interview not found"}, status=404)
+
+
+@api_view(["GET"])
+def company_employees(request):
+    """
+    Company-wide employee overview.
+    Returns total hired headcount + breakdown by domain (vacancy title)
+    across ALL vacancies, not just one.
+    """
+    from django.db.models import Count
+
+    total = Candidate.objects.filter(status="hired").count()
+
+    # Per-domain breakdown (only domains with actual hires, sorted desc)
+    domain_qs = (
+        Candidate.objects
+        .filter(status="hired")
+        .values("vacancy__id", "vacancy__title", "vacancy__required_skills")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+
+    hired_domains = [
+        {
+            "vacancy_id": row["vacancy__id"],
+            "domain": row["vacancy__title"],
+            "required_skills": row["vacancy__required_skills"],
+            "employee_count": row["count"],
+        }
+        for row in domain_qs
+    ]
+
+    hired_ids = {d["vacancy_id"] for d in hired_domains}
+
+    # Include vacancies with 0 hires so HR sees every domain
+    zero_domains = [
+        {
+            "vacancy_id": v["id"],
+            "domain": v["title"],
+            "required_skills": v["required_skills"],
+            "employee_count": 0,
+        }
+        for v in Vacancy.objects.all().values("id", "title", "required_skills")
+        if v["id"] not in hired_ids
+    ]
+
+    all_domains = hired_domains + zero_domains  # hired ones already sorted desc first
+
+    return Response({
+        "total_employees": total,
+        "total_vacancies": Vacancy.objects.count(),
+        "total_open_vacancies": Vacancy.objects.filter(status="open").count(),
+        "domains": all_domains,
+    })

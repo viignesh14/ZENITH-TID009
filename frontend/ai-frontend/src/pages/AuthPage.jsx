@@ -58,6 +58,9 @@ const AuthPage = () => {
                 }
 
                 // Success! Redirect to the respective dashboard
+                if (role === 'candidate') {
+                    localStorage.setItem('candidateEmail', email.trim().toLowerCase());
+                }
                 navigate(role === 'hr' ? '/hr' : '/candidate');
 
             } else {
