@@ -4,7 +4,7 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, CheckCircle, AlertTriangle, FileText, ChevronRight, Briefcase, Zap, ShieldCheck, BrainCircuit } from "lucide-react";
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+import BASE_URL from "../config";
 
 const TypingAnimation = ({ text }) => {
   const [displayedText, setDisplayedText] = useState("");

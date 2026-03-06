@@ -6,7 +6,7 @@ import { Briefcase, ArrowRight, Zap, Code, ShieldCheck, Database, Layout, Search
 import MockInterviewPage from "./MockInterview";
 import { supabase } from "../supabaseClient";
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+import BASE_URL from "../config";
 
 const TypingAnimation = ({ text }) => {
   const [displayedText, setDisplayedText] = useState("");

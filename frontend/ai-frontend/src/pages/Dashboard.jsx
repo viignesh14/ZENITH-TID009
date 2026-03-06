@@ -1,7 +1,7 @@
-import {React, useEffect, useState } from "react";
+import { React, useEffect, useState } from "react";
 import axios from "axios";
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+import BASE_URL from "../config";
 
 function Dashboard() {
   const [vacancyId] = useState(1);
@@ -78,8 +78,8 @@ function Dashboard() {
                   c.verification_status === "verified"
                     ? "green"
                     : c.verification_status === "suspicious"
-                    ? "orange"
-                    : "red",
+                      ? "orange"
+                      : "red",
               }}
             >
               {c.verification_status}

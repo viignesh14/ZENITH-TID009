@@ -7,7 +7,7 @@ import {
     Star, Target, ArrowLeft
 } from "lucide-react";
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+import BASE_URL from "../config";
 
 // ─── Score Ring ──────────────────────────────────────────────────────────────
 function ScoreRing({ score, size = 120 }) {
@@ -431,9 +431,9 @@ export default function MockInterviewPage({ vacancy, candidateEmail, candidateNa
                                         <div>
                                             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">AI Recommendation</p>
                                             <span className={`text-sm font-black px-3 py-1 rounded-xl border ${report.hiring_recommendation === "Strong Hire" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
-                                                    report.hiring_recommendation === "Hire" ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
-                                                        report.hiring_recommendation === "Maybe" ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
-                                                            "bg-red-500/20 text-red-400 border-red-500/30"
+                                                report.hiring_recommendation === "Hire" ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" :
+                                                    report.hiring_recommendation === "Maybe" ? "bg-amber-500/20 text-amber-400 border-amber-500/30" :
+                                                        "bg-red-500/20 text-red-400 border-red-500/30"
                                                 }`}>
                                                 {report.hiring_recommendation}
                                             </span>

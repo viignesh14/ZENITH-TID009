@@ -5,7 +5,7 @@ import { Users, CheckCircle, XCircle, BrainCircuit, ShieldAlert, ShieldCheck, Ma
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+import BASE_URL from "../config";
 
 function HRDashboard() {
   const [vacancies, setVacancies] = useState([]);
