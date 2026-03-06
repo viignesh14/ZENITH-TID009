@@ -60,6 +60,7 @@ function HRDashboard() {
       }
     } catch (err) {
       console.error("Error fetching vacancies:", err);
+      setLoading(false);
     }
   };
 
