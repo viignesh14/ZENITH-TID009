@@ -60,6 +60,9 @@ function HRDashboard() {
       }
     } catch (err) {
       console.error("Error fetching vacancies:", err);
+      if (err.response) {
+        console.error("Status:", err.response.status, "Data:", err.response.data);
+      }
       setLoading(false);
     }
   };
@@ -193,7 +196,9 @@ function HRDashboard() {
       });
     } catch (err) {
       console.error("Failed to create vacancy:", err);
-      const errorMsg = err.response?.data?.error || "Failed to create vacancy.";
+      const errorMsg = err.response?.data?.error ||
+        err.response?.data?.detail ||
+        (err.response ? `Server Error: ${err.response.status} ${err.response.statusText}` : "Network Error: Could not connect to API.");
       alert(errorMsg);
     } finally {
       setCreating(false);
