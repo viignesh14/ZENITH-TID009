@@ -193,7 +193,8 @@ function HRDashboard() {
       });
     } catch (err) {
       console.error("Failed to create vacancy:", err);
-      alert("Failed to create vacancy.");
+      const errorMsg = err.response?.data?.error || "Failed to create vacancy.";
+      alert(errorMsg);
     } finally {
       setCreating(false);
     }
