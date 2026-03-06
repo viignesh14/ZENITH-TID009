@@ -48,6 +48,69 @@ function CandidateDashboard() {
   const [selectedMockVacancy, setSelectedMockVacancy] = useState(null); // for mock interview
   const [staffTab, setStaffTab] = useState("overview"); // "overview" or "upgrade"
 
+  // Fetch profile from Supabase
+  const fetchProfile = async (email) => {
+    if (!email) return;
+    try {
+      const { data, error } = await supabase
+        .from('candidate_profiles')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single();
+
+      if (data) {
+        setProfile({
+          name: data.name || "",
+          phone: data.phone || "",
+          location: data.location || "",
+          linkedin: data.linkedin || "",
+          github: data.github || "",
+          experience: data.experience || "",
+          skills: data.skills || "",
+          currentRole: data.current_role || "",
+          education: data.education || "",
+          employee_id: data.employee_id || ""
+        });
+        localStorage.setItem("candidateProfile", JSON.stringify(data));
+      }
+    } catch (err) {
+      console.error("Error fetching profile from Supabase:", err);
+      // Fallback to local storage handled in init
+    }
+  };
+
+  const saveProfileToSupabase = async (profileData, email) => {
+    if (!email) return;
+    try {
+      const isHired = !!profileData.employee_id;
+
+      const upsertData = {
+        email: email.toLowerCase(),
+        name: profileData.name,
+        phone: profileData.phone,
+        location: profileData.location,
+        linkedin: profileData.linkedin,
+        github: profileData.github,
+        experience: profileData.experience,
+        skills: profileData.skills,
+        current_role: profileData.currentRole,
+        education: profileData.education,
+        employee_id: profileData.employee_id || null, // Include employee_id if it exists
+        updated_at: new Date()
+      };
+
+      const { error } = await supabase
+        .from('candidate_profiles')
+        .upsert(upsertData, { onConflict: 'email' });
+
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.error("Error saving profile to Supabase:", err);
+      return false;
+    }
+  };
+
   // Initialize email from localStorage if present
   useEffect(() => {
     const initDashboard = async () => {
@@ -64,10 +127,12 @@ function CandidateDashboard() {
         setSearchEmail(email);
         localStorage.setItem("candidateEmail", email); // Sync
         autoFetchApplications(email);
+        fetchProfile(email); // Load from Supabase
 
         // Listen for auth changes to clear email if they log out elsewhere
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
           if (!session) handleLogout();
+          else if (session.user?.email) fetchProfile(session.user.email);
         });
 
         // Poll every 45 seconds to catch status changes
@@ -140,11 +205,19 @@ function CandidateDashboard() {
   // Handle tab switching based on hired status (Automatic Landing)
   useEffect(() => {
     if (applications.length > 0) {
-      const isHired = applications.some(app => app.status === "hired");
-      if (isHired) {
+      const hiredApp = applications.find(app => app.status === "hired");
+      if (hiredApp) {
         // If hired, they are an employee -> show growth plan / welcome panel in My Applications
         setActiveTab("applications");
-        if (searchEmail) fetchTalentData(searchEmail);
+        if (searchEmail) {
+          fetchTalentData(searchEmail);
+
+          // Auto-sync Employee ID to Supabase if missing
+          if (!profile.employee_id) {
+            const nexusId = `HN-00${hiredApp.candidate_id || hiredApp.id}`;
+            saveProfileToSupabase({ ...profile, employee_id: nexusId }, searchEmail);
+          }
+        }
       } else {
         // If not hired (fired/rejected/new), show open roles so they can apply immediately
         setActiveTab("roles");
@@ -284,7 +357,7 @@ function CandidateDashboard() {
           <div className="mt-12 md:mt-0 flex flex-col items-center md:items-end space-y-4 relative z-10 w-full md:w-auto">
             {/* User Profile Mini-Card */}
             <div className="bg-slate-900/60 p-4 rounded-3xl border border-slate-700/50 backdrop-blur-xl w-full md:w-64 mb-4">
-              <div className="flex items-center space-x-4 mb-3">
+              <div className="flex items-center space-x-4">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-xs">
                   {hiredApp.name?.charAt(0) || "U"}
                 </div>
@@ -293,13 +366,6 @@ function CandidateDashboard() {
                   <p className="text-[10px] text-slate-500 truncate">{hiredApp.email}</p>
                 </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold py-2.5 rounded-xl transition-all active:scale-95 border border-red-500/20 text-xs"
-              >
-                <LogOut className="w-3.5 h-3.5 mr-2" />
-                Sign Out
-              </button>
             </div>
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em] opacity-40">Auth Verified • Nexus Core v2.4.0</p>
           </div>
@@ -326,6 +392,16 @@ function CandidateDashboard() {
           >
             <Award className="w-3.5 h-3.5 mr-2" />
             Upgrade Skill
+          </button>
+          <button
+            onClick={() => setStaffTab("profile")}
+            className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center ${staffTab === "profile"
+              ? "bg-emerald-600 text-white shadow-xl shadow-emerald-600/20"
+              : "bg-slate-800/40 text-slate-400 hover:text-white border border-slate-700/50"
+              }`}
+          >
+            <Users className="w-3.5 h-3.5 mr-2" />
+            My Profile
           </button>
         </div>
 
@@ -480,7 +556,7 @@ function CandidateDashboard() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : staffTab === "upgrade" ? (
           /* Upgrade Skills View */
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
             <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl rounded-[2rem] p-8 shadow-xl">
@@ -562,6 +638,125 @@ function CandidateDashboard() {
                 <div className="p-12 text-center border border-slate-700 border-dashed rounded-[2rem]">
                   <Loader2 className="w-10 h-10 text-slate-600 animate-spin mx-auto mb-4" />
                   <p className="text-slate-500">Retrieving personalized skill paths...</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Profile View for Staff */
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-3xl mx-auto">
+            <div className="bg-slate-800/40 border border-slate-700/50 backdrop-blur-xl p-8 rounded-3xl shadow-xl">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
+                <h2 className="text-2xl font-bold text-white flex items-center">
+                  <Users className="w-6 h-6 mr-3 text-indigo-400" /> Official Staff Profile
+                </h2>
+                {!isEditingProfile && (
+                  <button onClick={() => setIsEditingProfile(true)} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl transition-all shadow-lg active:scale-95 text-sm">
+                    Edit Details
+                  </button>
+                )}
+              </div>
+
+              {!isEditingProfile ? (
+                <div className="space-y-6 mt-6">
+                  {/* Reuse the existing profile display logic */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Full Name</label>
+                      <p className="text-lg text-white font-semibold">{profile.name || hiredApp.name || "Not provided"}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Employee Email</label>
+                      <p className="text-lg text-white font-semibold">{searchEmail || hiredApp.email || "Not provided"}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Nexus ID</label>
+                      <p className="text-lg text-indigo-400 font-black">HN-00{hiredApp.candidate_id || hiredApp.id}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Phone Number</label>
+                      <p className="text-lg text-white font-semibold">{profile.phone || "Not provided"}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Location</label>
+                      <p className="text-lg text-white font-semibold">{profile.location || "Not provided"}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">LinkedIn Profile</label>
+                      {profile.linkedin ? <a href={profile.linkedin} target="_blank" rel="noreferrer" className="text-lg text-indigo-400 hover:underline font-semibold break-all">{profile.linkedin}</a> : <p className="text-lg text-white font-semibold">Not provided</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">GitHub / Portfolio</label>
+                      {profile.github ? <a href={profile.github} target="_blank" rel="noreferrer" className="text-lg text-emerald-400 hover:underline font-semibold break-all">{profile.github}</a> : <p className="text-lg text-white font-semibold">Not provided</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Role in Company</label>
+                      <p className="text-lg text-white font-semibold">{hiredApp.vacancy_title}</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-slate-700/50">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Technical Skills</label>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.skills ? profile.skills.split(',').map((skill, i) => (
+                        <span key={i} className="px-3 py-1 bg-slate-700/50 text-slate-300 rounded-md border border-slate-600 font-medium text-sm">{skill.trim()}</span>
+                      )) : <p className="text-lg text-white font-semibold">Not provided</p>}
+                    </div>
+                  </div>
+                  {/* ... rest of the profile read-only view ... */}
+                  <div className="pt-6 border-t border-slate-700/50">
+                    <p className="text-xs text-slate-500 italic">This profile is linked to your official employment record. Changes made here will be verified by the Nexus AI Protocol.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6 mt-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2">Full Name</label>
+                      <input type="text" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-all font-medium" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2">Phone</label>
+                      <input type="text" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-all font-medium" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2">Location</label>
+                      <input type="text" value={profile.location} onChange={(e) => setProfile({ ...profile, location: e.target.value })} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-all font-medium" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2 opacity-50">Employee Email (System Managed)</label>
+                      <input type="email" value={searchEmail} disabled className="w-full bg-slate-900/30 border border-slate-700/50 rounded-xl px-4 py-3 text-slate-500 cursor-not-allowed font-medium" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2">LinkedIn Profile</label>
+                      <input type="url" value={profile.linkedin} onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-all font-medium" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2">GitHub / Portfolio</label>
+                      <input type="url" value={profile.github} onChange={(e) => setProfile({ ...profile, github: e.target.value })} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-all font-medium" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-400 mb-2">Technical Skills (Comma separated)</label>
+                      <input type="text" value={profile.skills} onChange={(e) => setProfile({ ...profile, skills: e.target.value })} className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-all font-medium" />
+                    </div>
+                  </div>
+                  <div className="pt-6 text-center space-x-4">
+                    <button onClick={() => setIsEditingProfile(false)} className="px-8 py-3 font-bold rounded-xl text-slate-400 bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-all shadow-lg active:scale-95">
+                      Cancel
+                    </button>
+                    <button onClick={async () => {
+                      const success = await saveProfileToSupabase({ ...profile, employee_id: `HN-00${hiredApp.candidate_id || hiredApp.id}` }, searchEmail);
+                      if (success) {
+                        setIsEditingProfile(false);
+                        setIsProfileSaved(true);
+                        setTimeout(() => setIsProfileSaved(false), 3000);
+                      } else {
+                        alert("Sync Failed. Please check Supabase connection.");
+                      }
+                    }} className={`px-8 py-3 font-bold rounded-xl text-white transition-all shadow-lg active:scale-95 ${isProfileSaved ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/20'}`}>
+                      {isProfileSaved ? "Saved to Nexus Cloud" : "Save Changes"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -827,12 +1022,17 @@ function CandidateDashboard() {
                   <button onClick={() => setIsEditingProfile(false)} className="px-8 py-3 font-bold rounded-xl text-slate-400 bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-all shadow-lg active:scale-95">
                     Cancel
                   </button>
-                  <button onClick={() => {
-                    localStorage.setItem("candidateProfile", JSON.stringify(profile));
-                    localStorage.setItem("candidateEmail", searchEmail);
-                    setIsEditingProfile(false);
-                    setIsProfileSaved(true);
-                    setTimeout(() => setIsProfileSaved(false), 3000);
+                  <button onClick={async () => {
+                    const success = await saveProfileToSupabase(profile, searchEmail);
+                    if (success) {
+                      localStorage.setItem("candidateProfile", JSON.stringify(profile));
+                      localStorage.setItem("candidateEmail", searchEmail);
+                      setIsEditingProfile(false);
+                      setIsProfileSaved(true);
+                      setTimeout(() => setIsProfileSaved(false), 3000);
+                    } else {
+                      alert("Failed to save profile to Supabase. Please ensure your session is active.");
+                    }
                   }} className={`px-8 py-3 font-bold rounded-xl text-white transition-all shadow-lg active:scale-95 ${isProfileSaved ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/20'}`}>
                     {isProfileSaved ? <span className="flex items-center"><CheckCircle className="w-5 h-5 mr-2" /> Saved</span> : "Save Profile Details"}
                   </button>
